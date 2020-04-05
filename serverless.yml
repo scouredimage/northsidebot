@@ -30,7 +30,7 @@ provider:
 
 functions:
   app:
-    handler: index.handlers
+    handler: index.handler
     events:
       - http: ANY /
       - http: 'ANY {proxy+}'
