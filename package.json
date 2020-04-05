@@ -7,6 +7,7 @@
     "@slack/web-api": "^5.8.0",
     "@types/spotify-web-api-node": "^4.0.1",
     "express": "^4.17.1",
+    "serverless": "^1.67.0",
     "serverless-http": "^2.3.2",
     "spotify-web-api-node": "^4.0.0"
   },
