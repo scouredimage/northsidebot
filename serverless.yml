@@ -5,32 +5,92 @@ service: bot
 plugins:
   - serverless-webpack
   - serverless-offline
+  - serverless-domain-manager
 
 custom:
+  stage: ${opt:stage, self:provider.stage}
+  tablename: northside-${self:custom.stage}
   webpack:
     webpackConfig: ./webpack.config.js
     includeModules: true
     keepOutputDirectory: trues
     excludeFiles: src/**/*.test.[t|j]s
+  enterprise:
+    disableFrameworksInstrumentation: true
+  customDomain:
+    domainName: northside.link
+    basePath: ''
+    stage: ${self:custom.stage}
+    createRoute53Record: true
 
 provider:
   name: aws
   runtime: nodejs12.x
   environment:
+    DB_TABLE_NAME: ${self:custom.tablename}
     SLACK_SIGNING_SECRET: ${param:SLACK_SIGNING_SECRET}
     SLACK_ACCESS_TOKEN: ${param:SLACK_ACCESS_TOKEN}
     DEBUG: '@slack/events-api:*'
     SPOTIFY_CLIENT_ID: ${param:SPOTIFY_CLIENT_ID}
     SPOTIFY_CLIENT_SECRET: ${param:SPOTIFY_CLIENT_SECRET}
     SPOTIFY_REQUEST_SCOPES: playlist-modify-public
-    SPOTIFY_AUTH_REDIRECT_URI: https://ila7pk2i01.execute-api.us-east-1.amazonaws.com/live/spotify/authorized
+    SPOTIFY_AUTH_REDIRECT_URI: https://${self:custom.customDomain.domainName}/spotify/authorized
     SPOTIFY_TRACK_PLAYLIST_ID: 32NmYcDmYu6cGSaPESsBtk
-    SPOTIFY_ALBUM_PLAYLIST_ID: 6FVg5NqAKnLg9xTsfSyr8c
-    SPOTIFY_PLAYLIST_PLAYLIST_ID: 0ejE8EJCGir9ntGEWCA7Ne
+    SPOTIFY_ALBUM_PLAYLIST_ID: 32NmYcDmYu6cGSaPESsBtk
+    SPOTIFY_PLAYLIST_PLAYLIST_ID: 32NmYcDmYu6cGSaPESsBtk
+
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - dynamodb:GetItem
+        - dynamodb:PutItem
+        - dynamodb:UpdateItem
+      Resource:
+        - 'arn:aws:dynamodb:*:*:table/${self:custom.tablename}'
+    - Effect: Allow
+      Action:
+        - dynamodb:Query
+      Resource:
+        - 'arn:aws:dynamodb:*:*:table/${self:custom.tablename}/index/*'
 
 functions:
-  app:
-    handler: index.handler
+  slackEvent:
+    handler: handler.slackEvents
     events:
-      - http: ANY /
-      - http: 'ANY {proxy+}'
+      - http:
+          method: ANY
+          path: /slack/events
+      - http:
+          method: ANY
+          path: '/slack/events/{proxy+}'
+  spotifyLogin:
+    handler: handler.spotifyLogin
+    events:
+      - http:
+          method: GET
+          path: /spotify/login
+  spotifyAuthorized:
+    handler: handler.spotifyAuthorized
+    events:
+      - http:
+          method: GET
+          path: /spotify/authorized
+
+resources:
+  Resources:
+    DeploymentsTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: Retain
+      Properties:
+        TableName: ${self:custom.tablename}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: space
+            AttributeType: S
+          - AttributeName: id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: space
+            KeyType: HASH
+          - AttributeName: id
+            KeyType: RANGE
