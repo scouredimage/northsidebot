@@ -2,17 +2,12 @@ import SpotifyWebApi from 'spotify-web-api-node'
 import { DynamoDB } from 'aws-sdk'
 import { getenv } from './util'
 
-export interface SpotifyAccessToken {
-  token: string
-  expires: number
-}
-
-export const SpotifyLinkTypes = ['track', 'album', 'playlist'] as const
-type SpotifyLinkTypeTuple = typeof SpotifyLinkTypes
-export type SpotifyLinkType = SpotifyLinkTypeTuple[number]
+export const LinkTypes = ['track', 'album', 'playlist'] as const
+type LinkTuple = typeof LinkTypes
+export type LinkType = LinkTuple[number]
 
 export interface SpotifyLink {
-  type: SpotifyLinkType
+  type: LinkType
   id: string
   space: string
   user: string
@@ -26,7 +21,7 @@ export interface TracksById {
 }
 
 export interface AddedTracks {
-  type: SpotifyLinkType,
+  type: LinkType,
   tracks: TracksById
 }
 
@@ -171,7 +166,7 @@ namespace history {
           }
         ))
       }
-    })
+    }).promise()
   }
 }
 
@@ -202,7 +197,7 @@ async function getAlbumTracks(albums: SpotifyLink[]): Promise<SpotifyLink[]> {
     albums.map(async (album) => {
       const { body: { tracks: { items }} } = await spotify.getAlbum(album.id)
       return items.map((track) => ({
-        type: 'track' as SpotifyLinkType,
+        type: 'track' as LinkType,
         id: track.id,
         space: album.space,
         user: album.user
@@ -217,7 +212,7 @@ async function getPlaylistTracks(playlists: SpotifyLink[]): Promise<SpotifyLink[
     playlists.map(async (playlist) => {
       const { body: { tracks: { items }}} = await spotify.getPlaylist(playlist.id)
       return items.map((page) => ({
-        type: 'track' as SpotifyLinkType,
+        type: 'track' as LinkType,
         id: page.track.id,
         space: playlist.space,
         user: playlist.user
@@ -228,7 +223,7 @@ async function getPlaylistTracks(playlists: SpotifyLink[]): Promise<SpotifyLink[
 
 async function addTracksToPlaylists(
   space: string,
-  idsByPlaylist: Record<SpotifyLinkType, SpotifyLink[]>
+  idsByPlaylist: Record<LinkType, SpotifyLink[]>
 ): Promise<AddedTracks[]> {
   let state = await auth.get(space)
   spotify.setAccessToken(state.access)
@@ -251,7 +246,7 @@ async function addTracksToPlaylists(
   }
 
   return Promise.all(
-    SpotifyLinkTypes
+    LinkTypes
       .filter((type) => idsByPlaylist[type].length > 0)
       .map(async (type) => {
 
@@ -275,7 +270,6 @@ async function addTracksToPlaylists(
         }
 
         console.debug(`adding ${JSON.stringify(tracks)} to ${playlist}`)
-
         await spotify
           .addTracksToPlaylist(playlist, tracks.map((track) => `spotify:track:${track.id}`))
           .catch((err) => {
@@ -299,8 +293,8 @@ async function addTracksToPlaylists(
   )
 }
 
-function mapLinksToTracks(links: SpotifyLink[]): Record<SpotifyLinkType, SpotifyLink[]> {
-  const idsByPlaylist: Record<SpotifyLinkType, SpotifyLink[]> = {
+function mapLinksToTracks(links: SpotifyLink[]): Record<LinkType, SpotifyLink[]> {
+  const idsByPlaylist: Record<LinkType, SpotifyLink[]> = {
     'track': [],
     'album': [],
     'playlist': []
@@ -313,7 +307,7 @@ function parseLink(space: string, user: string, link: string): SpotifyLink | und
   const track = /https?:\/\/open\.spotify\.com\/(?<type>(track|album|playlist))\/(?<id>[a-zA-Z0-9]+)/.exec(link)
   if (track && track.groups) {
     return {
-      type: track.groups.type as SpotifyLinkType,
+      type: track.groups.type as LinkType,
       id: track.groups.id,
       space,
       user

@@ -6,7 +6,7 @@ import {
 import serverless from 'serverless-http'
 import express from 'express'
 import {
-  SlackLinkSharedEvent,
+  LinkSharedEvent,
   registerEventListener,
   postMessage,
   teamInfo
@@ -28,7 +28,7 @@ function serialize(added: AddedTracks[]): string {
   )).join('\n')
 }
 
-const eventCallback = async (event: SlackLinkSharedEvent, respond: () => void) => {
+const eventCallback = async (event: LinkSharedEvent, respond: () => void) => {
   console.debug(`in channel ${event.channel} user ${event.user} shared ${JSON.stringify(event.links)}`)
   const { ok, team, error } = await teamInfo()
   if (ok) {
@@ -44,7 +44,7 @@ const eventCallback = async (event: SlackLinkSharedEvent, respond: () => void) =
           }
         }
       ],
-      text: `added ${added.length} track(s)`
+      text: `added ${added.map(({ tracks }) => Object.keys(tracks).length)} track(s)`
     })
     respond()
   } else {

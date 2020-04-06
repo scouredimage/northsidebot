@@ -2,18 +2,18 @@ import { createEventAdapter } from '@slack/events-api'
 import { WebClient, ChatPostMessageArguments } from '@slack/web-api'
 import { getenv } from './util'
 
-export interface SlackLink {
+export interface Link {
   domain: string
   url: string
 }
 
-export interface SlackLinkSharedEvent {
+export interface LinkSharedEvent {
   channel: string
   user: string
-  links: SlackLink[]
+  links: Link[]
 }
 
-export type EventListenerCallback = (event: SlackLinkSharedEvent, respond: () => void) => void
+export type EventListenerCallback = (event: LinkSharedEvent, respond: () => void) => void
 
 export function registerEventListener(callback: EventListenerCallback) {
   const slackEvents = createEventAdapter(getenv('SLACK_SIGNING_SECRET'), { waitForResponse: true })
