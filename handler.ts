@@ -14,10 +14,19 @@ import {
 import {
   parseAndAdd,
   createAuthorizeURL,
-  authorize
+  authorize,
+  AddedTracks
 } from './spotify'
 
 const app = express()
+
+function serialize(added: AddedTracks[]): string {
+  return ([] as string[]).concat(...added.map(
+    (entry) => Object.values(entry.tracks).map(
+      (track) => `• ${track.name} - ${track.artists}`
+    )
+  )).join('\n')
+}
 
 const eventCallback = async (event: SlackLinkSharedEvent, respond: () => void) => {
   console.debug(`in channel ${event.channel} user ${event.user} shared ${JSON.stringify(event.links)}`)
@@ -31,7 +40,7 @@ const eventCallback = async (event: SlackLinkSharedEvent, respond: () => void) =
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: added.map((track) => `• ${track}`).join('\n')
+            text: serialize(added)
           }
         }
       ],
