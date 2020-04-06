@@ -143,13 +143,14 @@ namespace auth {
 namespace history {
   // TODO: batch
   export function save(playlist: string, tracks: SpotifyLink[], byId: TracksById) {
+    const tablename = getenv('DB_TABLE_NAME')
     return db.batchWrite({
       RequestItems: {
-        'tracks': tracks.map((track) => (
+        [tablename]: tracks.map((track) => (
           {
             PutRequest: {
               Item: {
-                TableName: getenv('DB_TABLE_NAME'),
+                TableName: tablename,
                 Item: {
                   space: track.space,
                   id: `${playlist}|${track.id}`,
