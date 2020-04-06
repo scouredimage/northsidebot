@@ -23,7 +23,7 @@ const eventCallback = async (event: SlackLinkSharedEvent, respond: () => void) =
   console.debug(`in channel ${event.channel} user ${event.user} shared ${JSON.stringify(event.links)}`)
   const { ok, team, error } = await teamInfo()
   if (ok) {
-    const added = await parseAndAdd((team as any).name, event.links.map((link) => link.url))
+    const added = await parseAndAdd((team as any).name, event.user, event.links.map((link) => link.url))
     await postMessage({
       channel: event.channel,
       blocks: [
