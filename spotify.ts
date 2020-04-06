@@ -254,7 +254,7 @@ async function addTracksToPlaylists(
         console.debug(`adding ${JSON.stringify(tracks)} to ${playlist}`)
 
         await spotify
-          .addTracksToPlaylist(playlist, tracks.map((track) => `spotify:track:${track}`))
+          .addTracksToPlaylist(playlist, tracks.map((track) => `spotify:track:${track.id}`))
           .catch((err) => {
             console.error(`error adding tracks ${idsByPlaylist[type]} to playlist ${playlist}`, err)
             throw err
