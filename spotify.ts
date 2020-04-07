@@ -150,18 +150,15 @@ namespace history {
           {
             PutRequest: {
               Item: {
-                TableName: tablename,
-                Item: {
-                  space: track.space,
-                  id: `${playlist}|${track.id}`,
-                  type: track.type,
-                  playlist,
-                  track: track.id,
-                  name: byId[track.id].name,
-                  artist: byId[track.id].artists.join(', '),
-                  user: track.user,
-                  added: Date.now()
-                }
+                space: track.space,
+                id: `${playlist}|${track.id}`,
+                type: track.type,
+                playlist,
+                track: track.id,
+                name: byId[track.id].name,
+                artist: byId[track.id].artists.join(', '),
+                user: track.user,
+                added: Date.now()
               }
             }
           }
@@ -238,6 +235,8 @@ async function addTracksToPlaylists(
         expires_in: expires
       } 
     } = await spotify.refreshAccessToken()
+    state.access = access
+    state.expires = expires
     
     const updated = await auth.update(space, access, expires)
     if (!updated) { // someone else won the update race!
