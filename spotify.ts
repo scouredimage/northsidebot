@@ -1,5 +1,6 @@
 import SpotifyWebApi from 'spotify-web-api-node'
-import { DynamoDB } from 'aws-sdk'
+import { db } from './db';
+import * as auth from './auth';
 import { getenv } from './util'
 
 export const LinkTypes = ['track', 'album', 'playlist'] as const
@@ -31,115 +32,6 @@ const spotify = new SpotifyWebApi({
   redirectUri: getenv('SPOTIFY_AUTH_REDIRECT_URI')
 })
 
-const db = new DynamoDB.DocumentClient()
-
-namespace auth {
-  interface state {
-    access: string
-    refresh: string
-    expires: number
-  }
-
-  export async function create(space: string): Promise<string> {
-    const verify = Math.random().toString(36).substring(2, 15)
-    await db.put({
-      TableName: getenv('DB_TABLE_NAME'),
-      Item: {
-        space,
-        id: 'auth',
-        verify,
-        expires: Math.floor(Date.now() / 1000) + 3600 // one hour from now
-      }
-    }).promise()
-    return verify
-  }
-
-  export async function verifyAndSave(space: string, verify: string, auth: state): Promise<boolean> {
-    try {
-      await db.update({
-        TableName: getenv('DB_TABLE_NAME'),
-        UpdateExpression: 'SET #a = :access, #r = :refresh, #e = :expires',
-        ConditionExpression: '#v = :verify AND #e < :now',
-        Key: {
-          space,
-          id: 'auth'
-        },
-        ExpressionAttributeNames: {
-          '#v': 'verify',
-          '#a': 'accessToken',
-          '#r': 'refreshToken',
-          '#e': 'expires'
-        },
-        ExpressionAttributeValues: {
-          ':verify': verify,
-          ':access': auth.access,
-          ':refresh': auth.refresh,
-          ':expires': Date.now() + auth.expires,
-          ':now': Date.now(),
-        },
-        ReturnValues: 'ALL_NEW'
-      }).promise()
-    } catch (err) {
-      if (err.code !== 'ConditionalCheckFailedException') {
-        throw err
-      }
-      return false
-    }
-    return true
-  }
-
-  export async function get(space: string): Promise<state> {
-    const result = await db.get({
-      TableName: getenv('DB_TABLE_NAME'),
-      Key: {
-        space,
-        id: 'auth'
-      }
-    }).promise()
-    if (result?.Item) {
-      const state = {
-        access: result.Item.accessToken,
-        refresh: result.Item.refreshToken,
-        expires: result.Item.expires
-      }
-      return state
-    }
-    throw new Error('not found')
-  }
-
-  export function expired(auth: state): boolean {
-    return Date.now() >= auth.expires
-  }
-
-  export async function update(space: string, access: string, expires: number): Promise<boolean> {
-    try {
-      await db.update({
-        TableName: getenv('DB_TABLE_NAME'),
-        UpdateExpression: 'SET #a = :access, #e = :expires',
-        Key: {
-          space,
-          id: 'auth'
-        },
-        ExpressionAttributeNames: {
-          '#a': 'accessToken',
-          '#e': 'expires'
-        },
-        ExpressionAttributeValues: {
-          ':access': access,
-          ':expires': Date.now() + expires
-        },
-        ReturnValues: 'ALL_NEW'
-      }).promise()
-    } catch (err) {
-      if (err.code !== 'ConditionalCheckFailedException') {
-        throw err
-      }
-      return false
-    }
-    return true
-  }
-}
-
 namespace history {
   // TODO: batch
   export function save(playlist: string, tracks: SpotifyLink[], byId: TracksById) {
@@ -170,7 +62,9 @@ namespace history {
 
 export async function createAuthorizeURL(space: string): Promise<string> {
   const scopes = getenv('SPOTIFY_REQUEST_SCOPES').split(/,\s*/)
-  return spotify.createAuthorizeURL(scopes, await auth.create(space))
+  spotify.resetAccessToken()
+  spotify.resetRefreshToken()
+  return spotify.createAuthorizeURL(scopes, await auth.create(space, 'spotify'))
 }
 
 export async function authorize(space: string, code: string, verify: string) {
@@ -182,7 +76,7 @@ export async function authorize(space: string, code: string, verify: string) {
     }
   } = await spotify.authorizationCodeGrant(code)
 
-  if (!await auth.verifyAndSave(space, verify, { access, refresh, expires })) {
+  if (!await auth.verifyAndSave(space, 'spotify', verify, { auth: { access, refresh }, expires })) {
     throw new Error(`unknown/expired authorization state ${verify}`)
   }
 
@@ -223,9 +117,9 @@ async function addTracksToPlaylists(
   space: string,
   idsByPlaylist: Record<LinkType, SpotifyLink[]>
 ): Promise<AddedTracks[]> {
-  let state = await auth.get(space)
-  spotify.setAccessToken(state.access)
-  spotify.setRefreshToken(state.refresh)
+  let state = await auth.get(space, 'spotify')
+  spotify.setAccessToken(state.auth.access)
+  spotify.setRefreshToken(state.auth.refresh)
 
   if (auth.expired(state)) {
     console.debug('refreshing spotify access token')
@@ -235,14 +129,14 @@ async function addTracksToPlaylists(
         expires_in: expires
       } 
     } = await spotify.refreshAccessToken()
-    state.access = access
-    state.expires = expires
+    state.auth.access = access
+    state.auth.expires = expires
     
-    const updated = await auth.update(space, access, expires)
+    const updated = await auth.update(space, 'spotify', state)
     if (!updated) { // someone else won the update race!
-      state = await auth.get(space)
+      state = await auth.get(space, 'spotify')
     }
-    spotify.setAccessToken(state.access)
+    spotify.setAccessToken(state.auth.access)
   }
 
   return Promise.all(

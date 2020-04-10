@@ -26,8 +26,11 @@ provider:
   runtime: nodejs12.x
   environment:
     DB_TABLE_NAME: ${self:custom.tablename}
+    SLACK_CLIENT_ID: ${param:SLACK_CLIENT_ID}
+    SLACK_CLIENT_SECRET: ${param:SLACK_CLIENT_SECRET}
     SLACK_SIGNING_SECRET: ${param:SLACK_SIGNING_SECRET}
-    SLACK_ACCESS_TOKEN: ${param:SLACK_ACCESS_TOKEN}
+    SLACK_AUTH_SCOPES: 'links:read,team:read,chat:write'
+    SLACK_AUTH_REDIRECT_URI: https://${self:custom.customDomain.domainName}/slack/authorized
     # DEBUG: '@slack/events-api:*'
     SPOTIFY_CLIENT_ID: ${param:SPOTIFY_CLIENT_ID}
     SPOTIFY_CLIENT_SECRET: ${param:SPOTIFY_CLIENT_SECRET}
@@ -53,6 +56,18 @@ provider:
         - 'arn:aws:dynamodb:*:*:table/${self:custom.tablename}/index/*'
 
 functions:
+  slackLogin:
+    handler: handler.slackLogin
+    events:
+      - http:
+          method: GET
+          path: /slack/login
+  slackAuthorized:
+    handler: handler.slackAuthorized
+    events:
+      - http:
+          method: GET
+          path: /slack/authorized
   slackEvent:
     handler: handler.slackEvents
     events:
