@@ -137,7 +137,7 @@ async function refreshAccessToken(space: string, state: auth.state) {
     } 
   } = await spotify.refreshAccessToken()
   state.auth.access = access
-  state.auth.expires = now() + expires
+  state.expires = now() + expires
   
   const updated = await auth.update(space, 'spotify', state)
   if (!updated) { // someone else won the update race!
