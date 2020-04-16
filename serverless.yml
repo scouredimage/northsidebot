@@ -17,14 +17,12 @@ custom:
       tracks: 32NmYcDmYu6cGSaPESsBtk
       albums: 32NmYcDmYu6cGSaPESsBtk
       playlists: 32NmYcDmYu6cGSaPESsBtk
-    emojis: ':peach:,:banana:,:eggplant:,:new_moon_with_face:'
-  prod:
+  live:
     domain: northside.link
     playlist:
       tracks: 0EDmWH7RPv1aK4rN2I0tcV
       albums: 6FVg5NqAKnLg9xTsfSyr8c
       playlists: 0ejE8EJCGir9ntGEWCA7Ne
-    emojis: ':donu:,:baco:,:burrit:,:burg:,:tac:,:pizz:,:jalapen:,:eg:,:toas:,:sush:'
   webpack:
     webpackConfig: ./webpack.config.js
     includeModules: true
