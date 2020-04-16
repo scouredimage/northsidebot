@@ -48,7 +48,8 @@ export async function postMessage(options: ChatPostMessageArguments) {
 export async function createAuthorizeURL(): Promise<string> {
   const params = {
     client_id: getenv('SLACK_CLIENT_ID'),
-    scope: getenv('SLACK_AUTH_SCOPES')
+    scope: getenv('SLACK_AUTH_SCOPES'),
+    redirect_uri: getenv('SLACK_AUTH_REDIRECT_URI')
   }
   return 'https://slack.com/oauth/v2/authorize?' + stringify(params)
 }
@@ -57,6 +58,7 @@ export async function authorize(code: string) {
   const response = await new WebClient().oauth.v2.access({
     client_id: getenv('SLACK_CLIENT_ID'),
     client_secret: getenv('SLACK_CLIENT_SECRET'),
+    redirect_uri: getenv('SLACK_AUTH_REDIRECT_URI'),
     code
   })
   return auth.save(

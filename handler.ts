@@ -18,17 +18,15 @@ import {
   parseAndAdd,
   createAuthorizeURL as createSpotifyAuthorizeURL,
   authorize as spotifyAuthorize,
-  AddedTracks
+  Added
 } from './spotify'
 
 const app = express()
 
-function serialize(added: AddedTracks[]): string {
-  return ([] as string[]).concat(...added.map(
-    (entry) => Object.values(entry.tracks).map(
-      (track) => `• ${track.name} - ${track.artists}`
-    )
-  )).join('\n')
+function serialize(added: Added[]): string {
+  return added.map(({ playlist, links }) =>
+    links.map((link) => `• Added ${link.type} '${link.name} - ${link.by.join(', ')}' to playlist '${playlist.name}'`)
+  ).flat().join('\n')
 }
 
 const eventCallback = async (event: LinkSharedEvent, body: EventBody, respond: () => void) => {
@@ -49,7 +47,7 @@ const eventCallback = async (event: LinkSharedEvent, body: EventBody, respond: (
         }
       }
     ],
-    text: `added ${added.map(({ tracks }) => Object.keys(tracks).length)} track(s)`
+    text: `added ${added.reduce((sum, item) => sum + item.links.length, 0)} track(s)`
   })
   respond()
 }
@@ -91,7 +89,7 @@ export const slackAuthorized: APIGatewayProxyHandler = async (event: APIGatewayP
     console.log(err)
     return {
       statusCode: 401,
-      body: err.message() || 'authorization failed'
+      body: err.message || 'authorization failed'
     }
   }
 }
@@ -142,7 +140,7 @@ export const spotifyAuthorized: APIGatewayProxyHandler = async (event: APIGatewa
   } catch (err) {
     return {
       statusCode: 401,
-      body: err.message() || 'authorization failed'
+      body: err.message || 'authorization failed'
     }
   }
 }

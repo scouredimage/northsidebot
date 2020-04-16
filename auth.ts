@@ -1,12 +1,10 @@
 import { db } from './db';
-import { getenv } from './util'
+import { now, getenv } from './util'
 
-interface state {
+export interface state {
   auth: { [key: string]: any },
   expires: number
 }
-
-const now = (): number => Math.floor(Date.now() / 1000)
 
 export async function create(space: string, provider: string): Promise<string> {
   const verify = Math.random().toString(36).substring(2, 15)
@@ -15,8 +13,7 @@ export async function create(space: string, provider: string): Promise<string> {
     Item: {
       space,
       id: `auth|${provider}`,
-      verify,
-      expires: now() + 3600 // one hour from now
+      verify
     }
   }).promise()
   return verify
@@ -32,7 +29,7 @@ export async function verifyAndSave(
     await db.update({
       TableName: getenv('DB_TABLE_NAME'),
       UpdateExpression: 'SET #a = :auth, #e = :expires',
-      ConditionExpression: '#v = :verify AND #e < :now',
+      ConditionExpression: '#v = :verify',
       Key: {
         space,
         id: `auth|${provider}`
@@ -45,8 +42,7 @@ export async function verifyAndSave(
       ExpressionAttributeValues: {
         ':verify': verify,
         ':auth': state.auth,
-        ':expires': now() + state.expires,
-        ':now': now(),
+        ':expires': state.expires
       },
       ReturnValues: 'ALL_NEW'
     }).promise()
@@ -113,7 +109,7 @@ export async function update(space: string, provider: string, state: state): Pro
       },
       ExpressionAttributeValues: {
         ':auth': state.auth,
-        ':expires': now() + state.expires
+        ':expires': state.expires
       },
       ReturnValues: 'ALL_NEW'
     }).promise()

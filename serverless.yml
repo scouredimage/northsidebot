@@ -9,14 +9,29 @@ plugins:
 
 custom:
   stage: ${opt:stage, self:provider.stage}
+  target: ${self:custom.${self:custom.stage}}
   tablename: northside-${self:custom.stage}
+  dev:
+    domain: dev.northside.link
+    playlist:
+      tracks: 32NmYcDmYu6cGSaPESsBtk
+      albums: 32NmYcDmYu6cGSaPESsBtk
+      playlists: 32NmYcDmYu6cGSaPESsBtk
+    emojis: ':peach:,:banana:,:eggplant:,:new_moon_with_face:'
+  prod:
+    domain: northside.link
+    playlist:
+      tracks: 0EDmWH7RPv1aK4rN2I0tcV
+      albums: 6FVg5NqAKnLg9xTsfSyr8c
+      playlists: 0ejE8EJCGir9ntGEWCA7Ne
+    emojis: ':donu:,:baco:,:burrit:,:burg:,:tac:,:pizz:,:jalapen:,:eg:,:toas:,:sush:'
   webpack:
     webpackConfig: ./webpack.config.js
     includeModules: true
     keepOutputDirectory: trues
     excludeFiles: src/**/*.test.[t|j]s
   customDomain:
-    domainName: northside.link
+    domainName: ${self:custom.target.domain}
     basePath: ''
     stage: ${self:custom.stage}
     createRoute53Record: true
@@ -30,15 +45,15 @@ provider:
     SLACK_CLIENT_SECRET: ${param:SLACK_CLIENT_SECRET}
     SLACK_SIGNING_SECRET: ${param:SLACK_SIGNING_SECRET}
     SLACK_AUTH_SCOPES: 'links:read,team:read,chat:write'
-    SLACK_AUTH_REDIRECT_URI: https://${self:custom.customDomain.domainName}/slack/authorized
+    SLACK_AUTH_REDIRECT_URI: https://${self:custom.target.domain}/slack/authorized
     # DEBUG: '@slack/events-api:*'
     SPOTIFY_CLIENT_ID: ${param:SPOTIFY_CLIENT_ID}
     SPOTIFY_CLIENT_SECRET: ${param:SPOTIFY_CLIENT_SECRET}
     SPOTIFY_REQUEST_SCOPES: playlist-modify-public
-    SPOTIFY_AUTH_REDIRECT_URI: https://${self:custom.customDomain.domainName}/spotify/authorized
-    SPOTIFY_TRACK_PLAYLIST_ID: 0EDmWH7RPv1aK4rN2I0tcV
-    SPOTIFY_ALBUM_PLAYLIST_ID: 6FVg5NqAKnLg9xTsfSyr8c
-    SPOTIFY_PLAYLIST_PLAYLIST_ID: 0ejE8EJCGir9ntGEWCA7Ne
+    SPOTIFY_AUTH_REDIRECT_URI: https://${self:custom.target.domain}/spotify/authorized
+    SPOTIFY_TRACK_PLAYLIST_ID: ${self:custom.target.playlist.tracks}
+    SPOTIFY_ALBUM_PLAYLIST_ID: ${self:custom.target.playlist.albums}
+    SPOTIFY_PLAYLIST_PLAYLIST_ID: ${self:custom.target.playlist.playlists}
 
   iamRoleStatements:
     - Effect: Allow

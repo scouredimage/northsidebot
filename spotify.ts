@@ -1,29 +1,31 @@
 import SpotifyWebApi from 'spotify-web-api-node'
 import { db } from './db';
 import * as auth from './auth';
-import { getenv } from './util'
+import { now, getenv } from './util'
 
 export const LinkTypes = ['track', 'album', 'playlist'] as const
 type LinkTuple = typeof LinkTypes
 export type LinkType = LinkTuple[number]
 
-export interface SpotifyLink {
+export interface Link {
   type: LinkType
   id: string
+  name: string
+  by: string[]
+  items: string[]
   space: string
   user: string
 }
 
-export interface TracksById {
-  [id: string]: { 
-    name: String,
-    artists: string[]
-  }
+export interface Playlist {
+  id: string,
+  type: LinkType,
+  name: string
 }
 
-export interface AddedTracks {
-  type: LinkType,
-  tracks: TracksById
+export interface Added {
+  playlist: Playlist,
+  links: Link[]
 }
 
 const spotify = new SpotifyWebApi({
@@ -34,23 +36,20 @@ const spotify = new SpotifyWebApi({
 
 namespace history {
   // TODO: batch
-  export function save(playlist: string, tracks: SpotifyLink[], byId: TracksById) {
+  export function save(added: Added) {
+    const { links, playlist } = added
     const tablename = getenv('DB_TABLE_NAME')
     return db.batchWrite({
       RequestItems: {
-        [tablename]: tracks.map((track) => (
+        [tablename]: links.map((link) => (
           {
             PutRequest: {
               Item: {
-                space: track.space,
-                id: `${playlist}|${track.id}`,
-                type: track.type,
+                space: link.space,
+                id: `${playlist.id}|${link.id}`,
+                link,
                 playlist,
-                track: track.id,
-                name: byId[track.id].name,
-                artist: byId[track.id].artists.join(', '),
-                user: track.user,
-                added: Date.now()
+                added: now()
               }
             }
           }
@@ -76,7 +75,11 @@ export async function authorize(space: string, code: string, verify: string) {
     }
   } = await spotify.authorizationCodeGrant(code)
 
-  if (!await auth.verifyAndSave(space, 'spotify', verify, { auth: { access, refresh }, expires })) {
+  const state: auth.state = {
+    auth: { access, refresh },
+    expires: now() + expires
+  }
+  if (!await auth.verifyAndSave(space, 'spotify', verify, state)) {
     throw new Error(`unknown/expired authorization state ${verify}`)
   }
 
@@ -84,141 +87,126 @@ export async function authorize(space: string, code: string, verify: string) {
   spotify.setRefreshToken(refresh)
 }
 
-async function getAlbumTracks(albums: SpotifyLink[]): Promise<SpotifyLink[]> {
-  return ([] as SpotifyLink[]).concat(...await Promise.all(
-    albums.map(async (album) => {
-      const { body: { tracks: { items }} } = await spotify.getAlbum(album.id)
-      return items.map((track) => ({
-        type: 'track' as LinkType,
-        id: track.id,
-        space: album.space,
-        user: album.user
-      }))
-    })
-  ))
+async function getTrack(space: string, user: string, track: string): Promise<Link> {
+  const { body: { id, name, artists } } = await spotify.getTrack(track)
+  return {
+    type: 'track' as LinkType,
+    id,
+    name,
+    by: artists.map((artist) => artist.name),
+    items: [id],
+    space,
+    user
+  }
 }
 
 // TODO: paging
-async function getPlaylistTracks(playlists: SpotifyLink[]): Promise<SpotifyLink[]> {
-  return ([] as SpotifyLink[]).concat(...await Promise.all(
-    playlists.map(async (playlist) => {
-      const { body: { tracks: { items }}} = await spotify.getPlaylist(playlist.id)
-      return items.map((page) => ({
-        type: 'track' as LinkType,
-        id: page.track.id,
-        space: playlist.space,
-        user: playlist.user
-      }))
-    })
-  ))
+async function getAlbum(space: string, user: string, album: string): Promise<Link> {
+  const { body: { id, name, artists, tracks } } = await spotify.getAlbum(album)
+  return {
+    type: 'album' as LinkType,
+    id,
+    name,
+    by: artists.map((artist) => artist.name),
+    items: tracks.items.map((track) => track.id),
+    space,
+    user
+  }
 }
 
-async function addTracksToPlaylists(
-  space: string,
-  idsByPlaylist: Record<LinkType, SpotifyLink[]>
-): Promise<AddedTracks[]> {
-  let state = await auth.get(space, 'spotify')
+// TODO: paging
+async function getPlaylist(space: string, user: string, playlist: string): Promise<Link> {
+  const { body: { id, name, owner, tracks } } = await spotify.getPlaylist(playlist)
+  return {
+    type: 'playlist' as LinkType,
+    id,
+    name,
+    by: [owner.display_name || owner.id],
+    items: tracks.items.map(({ track }) => track.id),
+    space,
+    user
+  }
+}
+
+async function refreshAccessToken(space: string, state: auth.state) {
+  console.debug('refreshing spotify access token')
+  const {
+    body: {
+      access_token: access,
+      expires_in: expires
+    } 
+  } = await spotify.refreshAccessToken()
+  state.auth.access = access
+  state.auth.expires = now() + expires
+  
+  const updated = await auth.update(space, 'spotify', state)
+  if (!updated) { // someone else won the update race!
+    state = await auth.get(space, 'spotify')
+  }
   spotify.setAccessToken(state.auth.access)
-  spotify.setRefreshToken(state.auth.refresh)
+}
 
-  if (auth.expired(state)) {
-    console.debug('refreshing spotify access token')
-    const {
-      body: {
-        access_token: access,
-        expires_in: expires
-      } 
-    } = await spotify.refreshAccessToken()
-    state.auth.access = access
-    state.auth.expires = expires
-    
-    const updated = await auth.update(space, 'spotify', state)
-    if (!updated) { // someone else won the update race!
-      state = await auth.get(space, 'spotify')
-    }
-    spotify.setAccessToken(state.auth.access)
+async function addTracksToPlaylist(tracks: string[], playlist: string) {
+  console.debug(`adding ${JSON.stringify(tracks)} to ${playlist}`)
+  try {
+    await spotify.addTracksToPlaylist(playlist, tracks.map((track) => `spotify:track:${track}`))
+  } catch(err) {
+    console.error(`error adding tracks ${tracks} to playlist ${playlist}`, err)
+    throw err
   }
+}
 
-  return Promise.all(
-    LinkTypes
-      .filter((type) => idsByPlaylist[type].length > 0)
-      .map(async (type) => {
+async function addTracksToPlaylists(links: Link[]): Promise<Added[]> {
+  const byPlaylist: { [id: string]: Added } = {}
+  await Promise.all(
+    links.map(async (link) => {
+      const playlistId = getenv(`SPOTIFY_${link.type.toUpperCase()}_PLAYLIST_ID`)
+      await addTracksToPlaylist(link.items, playlistId)
 
-        let tracks: SpotifyLink[]
-        let playlist: string
-        switch (type) {
-          case 'track':
-            tracks = idsByPlaylist[type]
-            playlist = getenv('SPOTIFY_TRACK_PLAYLIST_ID')
-            break
-          case 'album':
-            const albums = idsByPlaylist[type]
-            tracks = await getAlbumTracks(albums)
-            playlist = getenv('SPOTIFY_ALBUM_PLAYLIST_ID')
-            break
-          case 'playlist':
-            const playlists = idsByPlaylist[type]
-            tracks = await getPlaylistTracks(playlists)
-            playlist = getenv('SPOTIFY_PLAYLIST_PLAYLIST_ID')
-            break
-        }
-
-        console.debug(`adding ${JSON.stringify(tracks)} to ${playlist}`)
-        await spotify
-          .addTracksToPlaylist(playlist, tracks.map((track) => `spotify:track:${track.id}`))
-          .catch((err) => {
-            console.error(`error adding tracks ${idsByPlaylist[type]} to playlist ${playlist}`, err)
-            throw err
-          })
-
-        const { body: { tracks: info } } = await spotify.getTracks(tracks.map((track) => track.id))
-        const addedForType = info.reduce((byId, track) => {
-          byId[track.id] = {
-            name: track.name,
-            artists: track.artists.map((artist) => artist.name)
-          }
-          return byId
-        }, {} as TracksById)
-
-        await history.save(playlist, tracks, addedForType)
-
-        return { type, tracks: addedForType }
-      })
+      const { body: { name: playlistName } } = await spotify.getPlaylist(playlistId)
+      const playlist = { id: playlistId, name: playlistName, type: link.type}
+      if (!byPlaylist[playlistId]) {
+        byPlaylist[playlistId] = { playlist, links: [link] }
+      } else {
+        byPlaylist[playlistId].links.push(link)
+      }
+    })
   )
+  await Promise.all(Object.values(byPlaylist).map(
+    (added) => history.save(added))
+  )
+  return Object.values(byPlaylist)
 }
 
-function mapLinksToTracks(links: SpotifyLink[]): Record<LinkType, SpotifyLink[]> {
-  const idsByPlaylist: Record<LinkType, SpotifyLink[]> = {
-    'track': [],
-    'album': [],
-    'playlist': []
-  }
-  links.forEach((link) => idsByPlaylist[link.type].push(link))
-  return idsByPlaylist
-}
-
-function parseLink(space: string, user: string, link: string): SpotifyLink | undefined {
+function parseLink(space: string, user: string, link: string): Promise<Link> {
   const track = /https?:\/\/open\.spotify\.com\/(?<type>(track|album|playlist))\/(?<id>[a-zA-Z0-9]+)/.exec(link)
   if (track && track.groups) {
-    return {
-      type: track.groups.type as LinkType,
-      id: track.groups.id,
-      space,
-      user
+    const type: LinkType = track.groups.type as LinkType
+    switch (type) {
+      case 'track':
+        return getTrack(space, user, track.groups.id)
+      case 'album':
+        return getAlbum(space, user, track.groups.id)
+      case 'playlist':
+        return getPlaylist(space, user, track.groups.id)
     }
   }
+  throw new Error(`could not parse: ${link}`)
 }
 
-function parseLinks(space: string, user: string, links: string[]): SpotifyLink[] {
-  return links
-    .map((link) => parseLink(space, user, link))
-    .filter((link: SpotifyLink | undefined): link is SpotifyLink => !!link)
+function parseLinks(space: string, user: string, links: string[]): Promise<Link[]> {
+  return Promise.all(links.map((link) => parseLink(space, user, link)))
 }
 
-export async function parseAndAdd(space: string, user: string, links: string[]): Promise<AddedTracks[]> {
-  return addTracksToPlaylists(space,
-    mapLinksToTracks(
-      parseLinks(space, user, links)
-    )
-  )                                                                                                                   
+export async function parseAndAdd(space: string, user: string, urls: string[]): Promise<Added[]> {
+  const state = await auth.get(space, 'spotify')
+  spotify.setAccessToken(state.auth.access)
+  spotify.setRefreshToken(state.auth.refresh)
+  if (auth.expired(state)) {
+    await refreshAccessToken(space, state)
+  }
+
+  const links = await parseLinks(space, user, urls)
+  console.log(`parsed links: ${JSON.stringify(links)}`)
+  return addTracksToPlaylists(links.filter((l1, i) => links.findIndex((l2) => l1.id === l2.id) === i))
 }
